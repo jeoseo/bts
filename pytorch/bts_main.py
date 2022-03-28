@@ -100,6 +100,8 @@ parser.add_argument('--multiprocessing_distributed',           help='Use multi-p
                                                                     'N processes per node, which has N GPUs. This is the '
                                                                     'fastest way to use PyTorch for either single node or '
                                                                     'multi node data parallel training', action='store_true',)
+parser.add_argument('--use_cpu', type=bool, default=False)       
+
 # Online eval
 parser.add_argument('--do_online_eval',                        help='if set, perform online eval in every eval_freq steps', action='store_true')
 parser.add_argument('--data_path_eval',            type=str,   help='path to the data for online evaluation', required=False)
@@ -320,47 +322,56 @@ def online_eval(model, dataloader_eval, gpu, ngpus):
 
 
 def main_worker(gpu, ngpus_per_node, args):
-    args.gpu = gpu
+    if(use_cpu==False)
+        args.gpu = gpu
 
-    if args.gpu is not None:
-        print("Use GPU: {} for training".format(args.gpu))
-
-    if args.distributed:
-        if args.dist_url == "env://" and args.rank == -1:
-            args.rank = int(os.environ["RANK"])
-        if args.multiprocessing_distributed:
-            args.rank = args.rank * ngpus_per_node + gpu
-        dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url, world_size=args.world_size, rank=args.rank)
-
-    # Create model
-    model = BtsModel(args)
-    model.train()
-    model.decoder.apply(weights_init_xavier)
-    set_misc(model)
-
-    num_params = sum([np.prod(p.size()) for p in model.parameters()])
-    print("Total number of parameters: {}".format(num_params))
-
-    num_params_update = sum([np.prod(p.shape) for p in model.parameters() if p.requires_grad])
-    print("Total number of learning parameters: {}".format(num_params_update))
-
-    if args.distributed:
         if args.gpu is not None:
-            torch.cuda.set_device(args.gpu)
-            model.cuda(args.gpu)
-            args.batch_size = int(args.batch_size / ngpus_per_node)
-            model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
-        else:
-            model.cuda()
-            model = torch.nn.parallel.DistributedDataParallel(model, find_unused_parameters=True)
-    else:
-        model = torch.nn.DataParallel(model)
-        model.cuda()
+            print("Use GPU: {} for training".format(args.gpu))
 
-    if args.distributed:
-        print("Model Initialized on GPU: {}".format(args.gpu))
+        if args.distributed:
+            if args.dist_url == "env://" and args.rank == -1:
+                args.rank = int(os.environ["RANK"])
+            if args.multiprocessing_distributed:
+                args.rank = args.rank * ngpus_per_node + gpu
+            dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url, world_size=args.world_size, rank=args.rank)
+
+        # Create model
+        model = BtsModel(args)
+        model.train()
+        model.decoder.apply(weights_init_xavier)
+        set_misc(model)
+
+        num_params = sum([np.prod(p.size()) for p in model.parameters()])
+        print("Total number of parameters: {}".format(num_params))
+
+        num_params_update = sum([np.prod(p.shape) for p in model.parameters() if p.requires_grad])
+        print("Total number of learning parameters: {}".format(num_params_update))
+
+        if args.distributed:
+            if args.gpu is not None:
+                torch.cuda.set_device(args.gpu)
+                model.cuda(args.gpu)
+                args.batch_size = int(args.batch_size / ngpus_per_node)
+                model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
+            else:
+                model.cuda()
+                model = torch.nn.parallel.DistributedDataParallel(model, find_unused_parameters=True)
+        else:
+            model = torch.nn.DataParallel(model)
+            model.cuda()
+
+        if args.distributed:
+            print("Model Initialized on GPU: {}".format(args.gpu))
+        else:
+            print("Model Initialized")
     else:
-        print("Model Initialized")
+        args.gpu = cpu
+        model = BtsModel(args)
+        model.train()
+        model.decoder.apply(weights_init_xavier)
+        set_misc(model)
+        device = torch.device('cpu')
+        model.to(device)
 
     global_step = 0
     best_eval_measures_lower_better = torch.zeros(6).cpu() + 1e3
